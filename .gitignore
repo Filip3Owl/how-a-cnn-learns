@@ -1,0 +1,31 @@
+# Environment
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.python-version
+*.egg-info/
+build/
+dist/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Data — downloaded on demand, never committed
+data/raw/
+data/processed/
+*.gz
+*.idx*-ubyte
+
+# Generated artefacts
+# NOTE: results/ is deliberately NOT ignored — the rendered GIFs and figures
+# are the deliverable of this project and belong in the repository.
+checkpoints/
+*.pt
+*.npz
+
+# OS / editors
+.DS_Store
+.vscode/
+.idea/

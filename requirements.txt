@@ -1,0 +1,30 @@
+# Core scientific stack
+# NumPy is pinned to 1.x: the last PyTorch build for macOS x86_64 is 2.2.2,
+# which was compiled against the NumPy 1.x C API. Installing NumPy 2.x breaks
+# every torch <-> numpy conversion with "Numpy is not available".
+numpy>=1.26,<2
+scipy>=1.11,<1.14
+
+# Deep learning
+# 2.2.2 / 0.17.2 are the final macOS x86_64 (Intel) wheels published upstream.
+torch==2.2.2
+torchvision==0.17.2
+
+# Visualization / animation
+matplotlib>=3.8
+pillow>=10.0
+imageio>=2.34
+# Bundles an ffmpeg binary for MP4 export. Needed because Instagram and TikTok
+# reject GIF uploads — see cnnviz.animate.save_mp4.
+imageio-ffmpeg>=0.4.9
+
+# Notebooks
+jupyterlab>=4.1
+ipywidgets>=8.1
+ipykernel>=6.29
+
+# Utilities
+tqdm>=4.66
+# Explicit: macOS Python installs often lack a usable system CA store, which
+# breaks the MNIST download. cnnviz.data uses certifi's bundle directly.
+certifi>=2024.2
