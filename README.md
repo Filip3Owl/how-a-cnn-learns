@@ -8,6 +8,13 @@ from an illustration drawn to look like one.
 The animations are the argument. The prose and the mathematics are there to
 tell you what you are looking at.
 
+![A 3x3 vertical-edge kernel sweeping across a handwritten 7. At each stop the
+nine products and their sum are shown, and one cell of the feature map is
+filled in.](results/01_convolution_sweep.gif)
+
+*From [`01_the_convolution_operation.ipynb`](notebooks/01_the_convolution_operation.ipynb)
+— a kernel sweeping a digit. Every number on screen was computed, not drawn.*
+
 ## Approach
 
 Two implementations, used deliberately:
@@ -61,6 +68,23 @@ Run the test suite with `pytest`.
 | 06 | What the filters learned | planned |
 | 07 | Where the network looks — saliency and occlusion | planned |
 | 08 | When learning fails — dead units, bad initialisation, overfitting | planned |
+
+### From notebook 02
+
+[`02_stacking_layers.ipynb`](notebooks/02_stacking_layers.ipynb) — what each
+layer of a stack actually buys, measured rather than asserted. Every figure
+below is one of its outputs; the rest are in [`results/`](results/).
+
+![A digit passing through seven stages: the input, four signed edge maps, the
+same maps after ReLU, after max-pooling, then a second convolution, ReLU and
+pooling, ending in four 7x7 maps.](results/02_stack_forward.gif)
+
+*Seven stages, one column each. Channels go up, resolution comes down — the
+shape of nearly every convolutional network ever shipped.*
+
+| ![A handwritten 7 with four nested coloured squares of 5, 6, 14 and 16 pixels, beside a chart of receptive-field size rising in steps.](results/02_receptive_field.png) | ![Three panels: a signed pre-activation on a diverging ramp, a binary gate mask, and the post-ReLU magnitude on a sequential ramp.](results/02_relu_gate.png) |
+|---|---|
+| **Depth buys context.** Two 5×5 kernels and two poolings put 16 of the digit's 28 pixels behind every output cell — the flat steps are the ReLUs, which widen nothing. | **ReLU is a gate.** It closed on 78.8% of this map: 21.6% genuinely negative — an edge the other way round, gone for good — and the rest flat background. |
 
 ## Layout
 
@@ -160,6 +184,17 @@ longer — `draw_matrix(..., title_fontsize=...)` exists because
 is a **different layout on a different canvas** — not the wide notebook figure
 scaled down, which ends up with type a few pixels tall.
 
+<table>
+<tr>
+<td><img src="results/02_maxpool_sweep.gif" width="440" alt="A wide three-panel layout: a 12x12 activation map, the 2x2 window with its four numbers, and the pooled map filling in."></td>
+<td><img src="results/02_maxpool_sweep_feed.gif" width="200" alt="The same three panels stacked vertically on a portrait canvas, with larger type and an enlarged window."></td>
+</tr>
+</table>
+
+*The same animation, twice. Same numbers, same colour scale, different layout:
+the wide cut reads at leisure, the portrait one has to work at arm's length on
+a phone.*
+
 | Preset | Pixels | For |
 |---|---|---|
 | `FEED_PORTRAIT` | 1080×1350 (4:5) | Instagram/Facebook feed — most screen while scrolling |
@@ -217,3 +252,11 @@ Three rules that matter more than they sound:
   a panel that rescales to its own frame renders nine near-zero products as
   vividly as a strong edge, and the colour ends up contradicting the number
   printed beside it.
+
+![Four panels of the same unit at rising thresholds, sharing one colour scale.
+The response narrows from 144 active cells to 49, then 7, then none.](results/02_threshold.png)
+
+*Why the shared scale is not a detail. One unit, four thresholds, one scale
+across all four: the response visibly narrows **and** dims until the unit is
+dead. Scaled per panel, the last three would each look as strong as the first,
+and the figure would say the opposite of what it means.*
