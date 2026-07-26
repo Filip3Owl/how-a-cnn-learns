@@ -11,6 +11,7 @@ folder therefore reproduces the order of the series.
 from __future__ import annotations
 
 import datetime as _dt
+import urllib.parse
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -62,23 +63,29 @@ def write_index() -> Path:
     """
     rows = []
     for item in list_results():
+        # Percent-encode the link target: a filename containing a space — which
+        # is what a stray "foo copy.gif" looks like — silently produces a broken
+        # image in every Markdown renderer. The name is still shown verbatim in
+        # the code span beside it.
+        href = urllib.parse.quote(item.name)
+
         if item.suffix.lower() == ".gif":
             size = item.stat().st_size / 1e6
             rows.append(
                 f"### {item.stem.replace('_', ' ')}\n\n"
-                f"![{item.stem}]({item.name})\n\n"
+                f"![{item.stem}]({href})\n\n"
                 f"`{item.name}` · {size:.2f} MB\n"
             )
         elif item.suffix.lower() in {".png", ".svg"}:
             rows.append(
                 f"### {item.stem.replace('_', ' ')}\n\n"
-                f"![{item.stem}]({item.name})\n\n`{item.name}`\n"
+                f"![{item.stem}]({href})\n\n`{item.name}`\n"
             )
         elif item.suffix.lower() == ".mp4":
             size = item.stat().st_size / 1e6
             rows.append(
                 f"### {item.stem.replace('_', ' ')} (video)\n\n"
-                f"[{item.name}]({item.name}) · {size:.2f} MB — "
+                f"[{item.name}]({href}) · {size:.2f} MB — "
                 "post this to Instagram or TikTok; neither accepts GIF.\n"
             )
 

@@ -9,9 +9,11 @@ layout, not the same figure scaled down.
 Practical notes on posting, which drive the numbers below:
 
 * **Instagram does not accept GIF uploads.** Neither does TikTok. Both want
-  MP4. X/Twitter and WhatsApp accept GIF but transcode it to video anyway.
-  Use :func:`cnnviz.animate.save_mp4` for those platforms and keep the GIF
-  for GitHub, docs and messaging.
+  MP4. X/Twitter and WhatsApp accept GIF but transcode it to video anyway;
+  LinkedIn takes either. Use :func:`cnnviz.animate.save_mp4` for those
+  platforms and keep the GIF for GitHub, docs and messaging. That function
+  also handles the container details a feed rejects a file over — chroma
+  format, a silent audio track, even dimensions.
 * **Feeds autoplay muted and loop.** There is no sound to carry meaning and
   no scrubber, so every frame has to stand alone and the loop has to be
   worth watching twice.
@@ -62,11 +64,12 @@ class Canvas:
         return size * self.scale
 
 
-#: Instagram/Facebook feed, portrait. The tallest a feed post is allowed to
-#: be, so it occupies the most screen as the viewer scrolls — the default.
+#: Instagram/Facebook/LinkedIn feed, portrait. The tallest a feed post is
+#: allowed to be, so it occupies the most screen as the viewer scrolls — and
+#: the one shape all three show uncropped. The default.
 FEED_PORTRAIT = Canvas(
     "feed", 1080, 1350, scale=2.0,
-    note="Instagram/Facebook feed post (4:5). Most screen real estate.",
+    note="Instagram/Facebook/LinkedIn feed post (4:5). Most screen real estate.",
 )
 
 #: Square. Safest across platforms and never cropped in a grid preview.

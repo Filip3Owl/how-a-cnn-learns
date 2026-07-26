@@ -9,7 +9,7 @@ from __future__ import annotations
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
-from matplotlib.patches import Rectangle
+from matplotlib.patches import FancyArrowPatch, Rectangle
 
 from cnnviz import style, text
 
@@ -17,10 +17,13 @@ __all__ = [
     "draw_matrix",
     "highlight_window",
     "draw_kernel",
+    "draw_maps",
     "draw_feature_maps",
     "frame_header",
     "progress_bar",
     "caption",
+    "glyph_between",
+    "arrow_between",
 ]
 
 
@@ -246,6 +249,74 @@ def draw_kernel(ax: Axes, kernel: np.ndarray, title: str = "Kernel"):
     )
 
 
+def draw_maps(
+    axes,
+    maps: np.ndarray,
+    *,
+    mode: str = "magnitude",
+    norm=None,
+    titles: list[str] | None = None,
+    title_fontsize: float = 9,
+    shared_scale: bool = True,
+):
+    """Paint a stack of feature maps into axes that already exist.
+
+    The counterpart to :func:`draw_feature_maps`, which creates its own grid.
+    **This is the one to use inside an animation**: a frame callback has to
+    place its panels itself, and any helper that calls ``fig.subplots`` both
+    ignores the frame's layout and re-solves the geometry each time it is
+    called, which shows up as panels drifting by a pixel between frames.
+
+    Args:
+        axes: Flat sequence of axes, one per map. Extra axes are hidden, so a
+            fixed grid can hold a stage with fewer channels than its
+            neighbours without the layout moving.
+        maps: Array of shape ``(C, H, W)``.
+        mode: Encoding, as in :func:`draw_matrix`.
+        norm: Explicit colour scale. Pass one built from the whole animation
+            when these panels are a frame; see :func:`draw_matrix`.
+        titles: Per-panel labels.
+        title_fontsize: Size of those labels.
+        shared_scale: Normalise every panel against the *same* range. Keep
+            this on for comparisons across channels — per-panel scaling makes
+            a near-dead channel look as active as a strongly firing one, which
+            is the single most misleading thing a feature-map grid can do.
+
+    Returns:
+        The list of images created.
+    """
+    maps = np.asarray(maps)
+    axes = list(axes)
+    n = maps.shape[0]
+
+    if len(axes) < n:
+        raise ValueError(f"{len(axes)} axes for {n} maps.")
+
+    norm_for = style.signed_norm if mode == "signed" else style.magnitude_norm
+    cmap = {
+        "signed": style.CMAP_SIGNED,
+        "magnitude": style.CMAP_MAGNITUDE,
+    }.get(mode) or plt.get_cmap(style.CMAP_PIXELS)
+
+    shared = norm if norm is not None else (norm_for(maps) if shared_scale else None)
+    images = []
+
+    for k, ax in enumerate(axes):
+        if k >= n:
+            ax.set_visible(False)
+            continue
+
+        panel_norm = shared if shared is not None else norm_for(maps[k])
+        images.append(
+            ax.imshow(maps[k], cmap=cmap, norm=panel_norm, interpolation="nearest")
+        )
+        style.bare(ax)
+        if titles and k < len(titles):
+            ax.set_title(titles[k], fontsize=title_fontsize, color=style.INK_SECONDARY)
+
+    return images
+
+
 def draw_feature_maps(
     fig,
     maps: np.ndarray,
@@ -258,6 +329,10 @@ def draw_feature_maps(
 ):
     """Lay out a stack of feature maps as a contact sheet.
 
+    Creates the grid, then hands off to :func:`draw_maps`. For a still figure
+    in a notebook; inside an animation, place the axes yourself and call
+    :func:`draw_maps` directly.
+
     Args:
         fig: Target figure; its existing axes are not cleared.
         maps: Array of shape ``(C, H, W)``.
@@ -265,10 +340,7 @@ def draw_feature_maps(
         mode: Encoding, as in :func:`draw_matrix`.
         titles: Per-panel labels.
         suptitle: Figure-level heading.
-        shared_scale: Normalise every panel against the *same* range. Keep
-            this on for comparisons across channels — per-panel scaling makes
-            a near-dead channel look as active as a strongly firing one, which
-            is the single most misleading thing a feature-map grid can do.
+        shared_scale: See :func:`draw_maps`.
 
     Returns:
         The list of images created.
@@ -278,33 +350,147 @@ def draw_feature_maps(
     ncols = min(ncols, n)
     nrows = int(np.ceil(n / ncols))
 
-    signed = mode == "signed"
-    norm_for = style.signed_norm if signed else style.magnitude_norm
-    cmap = {
-        "signed": style.CMAP_SIGNED,
-        "magnitude": style.CMAP_MAGNITUDE,
-    }.get(mode) or plt.get_cmap(style.CMAP_PIXELS)
-
-    shared = norm_for(maps) if shared_scale else None
-
     axes = fig.subplots(nrows, ncols, squeeze=False)
-    images = []
-
-    for k in range(nrows * ncols):
-        ax = axes[k // ncols][k % ncols]
-        if k >= n:
-            ax.set_visible(False)
-            continue
-
-        panel_norm = shared if shared is not None else norm_for(maps[k])
-        images.append(
-            ax.imshow(maps[k], cmap=cmap, norm=panel_norm, interpolation="nearest")
-        )
-        style.bare(ax)
-        if titles and k < len(titles):
-            ax.set_title(titles[k], fontsize=9, color=style.INK_SECONDARY)
+    images = draw_maps(
+        [axes[k // ncols][k % ncols] for k in range(nrows * ncols)],
+        maps, mode=mode, titles=titles, shared_scale=shared_scale,
+    )
 
     if suptitle:
         fig.suptitle(suptitle, fontsize=13, color=style.INK_PRIMARY, x=0.02, ha="left")
 
     return images
+
+
+# --------------------------------------------------------------------------
+# Flow between panels
+#
+# A pipeline figure is read as "this, then this, then this", and what carries
+# that reading is the connector between panels, not the panels. Both helpers
+# below position themselves from the axes' *realised* figure coordinates, so
+# a retuned layout moves them along with the panels instead of leaving them
+# stranded — which is what happens with hardcoded figure coordinates.
+# --------------------------------------------------------------------------
+
+def _gap_centre(left_ax, right_ax, y: float | None) -> tuple[float, float]:
+    """Centre of the gap between two panels, in figure coordinates."""
+    left, right = left_ax.get_position(), right_ax.get_position()
+    if y is None:
+        y = (left.y0 + left.y1) / 2
+    return (left.x1 + right.x0) / 2, y
+
+
+def _gap(first_ax, second_ax) -> tuple[str, float, float, float]:
+    """Orientation and extent of the gap between two panels.
+
+    Returns ``(orientation, centre_x, centre_y, half_length)``. The larger of
+    the two separations wins, so a pipeline reads left-to-right when its
+    panels sit side by side and top-to-bottom when they are stacked — which
+    is exactly the difference between the notebook layout and the feed cut.
+    """
+    a, b = first_ax.get_position(), second_ax.get_position()
+    horizontal = b.x0 - a.x1
+    vertical = a.y0 - b.y1
+
+    if horizontal >= vertical:
+        return "horizontal", (a.x1 + b.x0) / 2, (a.y0 + a.y1) / 2, horizontal / 2
+    return "vertical", (a.x0 + a.x1) / 2, (a.y0 + b.y1) / 2, vertical / 2
+
+
+def glyph_between(
+    fig,
+    left_ax,
+    right_ax,
+    symbol: str,
+    y: float | None = None,
+    fontsize: float = 16,
+    color: str | None = None,
+):
+    """Set a mathematical operator in the gap between two panels.
+
+    For the terms of an expression laid out as panels — ``patch ⊙ kernel =
+    products``. Use :func:`arrow_between` instead when the relation is
+    "becomes" rather than "combined with".
+    """
+    x, y = _gap_centre(left_ax, right_ax, y)
+    return fig.text(
+        x, y, symbol, ha="center", va="center",
+        fontsize=fontsize, color=color or style.INK_MUTED,
+    )
+
+
+def arrow_between(
+    fig,
+    from_ax,
+    to_ax,
+    label: str | None = None,
+    y: float | None = None,
+    x: float | None = None,
+    fontsize: float = 9,
+    color: str | None = None,
+    label_gap: float | None = None,
+    shrink: float = 0.30,
+):
+    """Draw a labelled flow arrow from one panel to the next.
+
+    The label names the operation that turns the first panel into the second
+    — ``conv 5×5``, ``ReLU``, ``max-pool 2×2``. Naming it on the arrow rather
+    than in the caption is what lets a viewer read a pipeline figure without
+    the surrounding prose.
+
+    The direction is taken from where the panels actually sit: side by side
+    gives a left-to-right arrow with the label above it, stacked gives a
+    downward arrow with the label beside it. The same call therefore works for
+    a wide notebook figure and for the stacked feed cut of the same pipeline.
+
+    Args:
+        fig: Figure to draw on.
+        from_ax: Panel the arrow leaves.
+        to_ax: Panel it enters.
+        label: Text set just clear of the arrow.
+        y: Override the height of a horizontal arrow. Defaults to the vertical
+            centre of ``from_ax`` — worth passing explicitly when the two
+            panels differ in height, so the arrow sits on the band's midline
+            rather than on one panel's.
+        x: Override the horizontal position of a vertical arrow, likewise. Pass
+            ``0.5`` to centre it on the figure when the panels it joins are one
+            column of a wider row.
+        fontsize: Size of the label.
+        color: Ink for arrow and label; defaults to the theme's muted ink,
+            because the connector is structure, not data.
+        label_gap: Offset of the label from the arrow, in figure coordinates.
+            Defaults to a value chosen per orientation — figure coordinates
+            are fractions of two different lengths, so one number cannot serve
+            both directions on a canvas that is not square.
+        shrink: Fraction of the gap left clear at each end, so the arrow does
+            not touch the panels it connects.
+    """
+    orientation, centre_x, centre_y, half = _gap(from_ax, to_ax)
+    if orientation == "horizontal" and y is not None:
+        centre_y = y
+    if orientation == "vertical" and x is not None:
+        centre_x = x
+    color = color or style.INK_MUTED
+    inset = half * shrink
+
+    if orientation == "horizontal":
+        gap = 0.020 if label_gap is None else label_gap
+        start = (centre_x - half + inset, centre_y)
+        end = (centre_x + half - inset, centre_y)
+        label_xy, ha, va = (centre_x, centre_y + gap), "center", "bottom"
+    else:
+        # Arrows point down the page: the source panel is the one above.
+        gap = 0.012 if label_gap is None else label_gap
+        start = (centre_x, centre_y + half - inset)
+        end = (centre_x, centre_y - half + inset)
+        label_xy, ha, va = (centre_x + gap, centre_y), "left", "center"
+
+    fig.add_artist(FancyArrowPatch(
+        start, end,
+        transform=fig.transFigure,
+        arrowstyle="-|>", mutation_scale=11,
+        linewidth=1.1, color=color, zorder=4,
+    ))
+
+    if label:
+        fig.text(*label_xy, label, ha=ha, va=va, fontsize=fontsize, color=color)

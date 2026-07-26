@@ -19,7 +19,10 @@ from cnnviz.layers import (
     Flatten,
     MaxPool2D,
     ReLU,
+    Sequential,
+    receptive_field,
     softmax_cross_entropy,
+    trace_receptive_field,
 )
 
 
@@ -224,3 +227,146 @@ def test_maxpool_rejects_indivisible_input(rng):
 def test_backward_before_forward_is_an_error():
     with pytest.raises(RuntimeError, match="before forward"):
         Conv2D(1, 1, seed=0).backward(np.zeros((1, 1, 2, 2), dtype=np.float32))
+
+
+# ---------------------------------------------------------------------------
+# Sequential — the container the notebooks animate out of
+# ---------------------------------------------------------------------------
+
+def _small_stack():
+    return Sequential(
+        Conv2D(1, 3, kernel_size=5, padding=2, seed=6), ReLU(), MaxPool2D(2),
+        Conv2D(3, 2, kernel_size=5, padding=2, seed=7), ReLU(), MaxPool2D(2),
+    )
+
+
+def test_sequential_keeps_the_input_and_every_layer_output(rng):
+    """The intermediates are the product here, not a byproduct."""
+    net = _small_stack()
+    x = rng.normal(size=(2, 1, 16, 16)).astype(np.float32)
+    out = net.forward(x)
+
+    assert len(net.activations) == len(net) + 1
+    np.testing.assert_array_equal(net.activations[0], x)
+    np.testing.assert_array_equal(net.activations[-1], out)
+    assert [a.shape[1:] for a in net.activations] == [
+        (1, 16, 16), (3, 16, 16), (3, 16, 16), (3, 8, 8), (2, 8, 8), (2, 8, 8), (2, 4, 4),
+    ]
+
+
+def test_sequential_matches_calling_the_layers_by_hand(rng):
+    net = _small_stack()
+    x = rng.normal(size=(1, 1, 16, 16)).astype(np.float32)
+
+    by_hand = x
+    for layer in net.layers:
+        by_hand = layer.forward(by_hand)
+
+    np.testing.assert_allclose(net.forward(x), by_hand, rtol=1e-6)
+
+
+def test_sequential_backward_walks_the_stack_in_reverse(rng):
+    """dx from the container must equal dx from the hand-written chain."""
+    x = rng.normal(size=(1, 1, 16, 16)).astype(np.float32)
+
+    net = _small_stack()
+    out = net.forward(x)
+    upstream = rng.normal(size=out.shape).astype(np.float32)
+    dx = net.backward(upstream)
+    grads = {k: v.copy() for k, v in net.grads.items()}
+
+    manual = _small_stack()          # same seeds, so the same parameters
+    manual.forward(x)
+    grad = upstream
+    for layer in reversed(manual.layers):
+        grad = layer.backward(grad)
+
+    np.testing.assert_allclose(dx, grad, rtol=1e-5, atol=1e-6)
+    np.testing.assert_allclose(grads["0.W"], manual.layers[0].dW, rtol=1e-5, atol=1e-6)
+
+
+def test_sequential_params_are_the_layers_own_arrays(rng):
+    """An optimiser updates in place through this view; copies would train nothing."""
+    net = _small_stack()
+    net.params["0.b"] += 1.0
+
+    np.testing.assert_allclose(net.layers[0].b, 1.0)
+    assert set(net.params) == {"0.W", "0.b", "3.W", "3.b"}
+    assert set(net.grads) == set(net.params)
+
+
+def test_sequential_trace_before_forward_is_an_error():
+    with pytest.raises(RuntimeError, match="before forward"):
+        _small_stack().trace()
+
+
+# ---------------------------------------------------------------------------
+# Receptive fields
+# ---------------------------------------------------------------------------
+
+def test_receptive_field_follows_the_standard_arithmetic():
+    """r += (k-1) * jump, then jump *= stride — checked stage by stage."""
+    net = _small_stack()
+    ladder = [receptive_field(net, depth) for depth in range(len(net) + 1)]
+
+    assert ladder == [(1, 1), (5, 1), (5, 1), (6, 2), (14, 2), (14, 2), (16, 4)]
+
+
+def test_relu_does_not_widen_the_receptive_field():
+    """A pointwise layer reads one input per output; only kernels and strides widen."""
+    net = Sequential(Conv2D(1, 1, kernel_size=3, seed=0), ReLU())
+    assert receptive_field(net, 1) == receptive_field(net, 2)
+
+
+def test_receptive_field_equals_the_support_of_the_gradient(rng):
+    """The patch that can change a unit is exactly the patch it sends gradient to.
+
+    An independent check on the index arithmetic: send a one-hot gradient back
+    from a single output cell and see which input pixels receive any of it.
+    """
+    net = Sequential(Conv2D(1, 2, kernel_size=3, seed=8),
+                     Conv2D(2, 1, kernel_size=3, seed=9))
+    out = net.forward(rng.normal(size=(1, 1, 12, 12)).astype(np.float64))
+
+    row, col = 3, 4
+    grad = np.zeros_like(out)
+    grad[0, 0, row, col] = 1.0
+    dx = net.backward(grad)[0, 0]
+
+    top, left, size = trace_receptive_field(net, row, col)
+    rows, cols = np.nonzero(dx)
+
+    assert (rows.min(), rows.max()) == (top, top + size - 1)
+    assert (cols.min(), cols.max()) == (left, left + size - 1)
+    assert np.count_nonzero(dx) == size * size, "the whole window should be reached"
+
+
+def test_pooling_leaves_the_support_sparse_inside_the_field(rng):
+    """Max-pool routes gradient to winners only, so the field is an upper bound."""
+    net = Sequential(Conv2D(1, 1, kernel_size=3, seed=10), MaxPool2D(2))
+    out = net.forward(rng.normal(size=(1, 1, 12, 12)).astype(np.float64))
+
+    grad = np.zeros_like(out)
+    grad[0, 0, 2, 2] = 1.0
+    dx = net.backward(grad)[0, 0]
+
+    top, left, size = trace_receptive_field(net, 2, 2)
+    rows, cols = np.nonzero(dx)
+
+    assert rows.min() >= top and rows.max() <= top + size - 1
+    assert cols.min() >= left and cols.max() <= left + size - 1
+    assert 0 < np.count_nonzero(dx) < size * size
+
+
+def test_padding_shows_up_as_negative_coordinates():
+    """A unit at the corner of a padded layer reads into the padding, not the image."""
+    net = Sequential(Conv2D(1, 1, kernel_size=5, padding=2, seed=11))
+    assert trace_receptive_field(net, 0, 0) == (-2, -2, 5)
+
+
+def test_receptive_field_refuses_a_stack_that_has_lost_its_grid():
+    net = Sequential(
+        Conv2D(1, 1, kernel_size=3, seed=12), Flatten(), Dense(4, 2, seed=13),
+    )
+    with pytest.raises(ValueError, match="spatial grid"):
+        receptive_field(net)

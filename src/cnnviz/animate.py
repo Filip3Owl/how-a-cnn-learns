@@ -208,6 +208,46 @@ def save_gif(
     return path
 
 
+def _add_silent_audio(path: Path) -> None:
+    """Mux a silent AAC track into an existing MP4, in place.
+
+    A video with no audio stream at all plays fine in a browser and is still
+    refused at upload by a good deal of the posting chain: Instagram's
+    publishing spec lists AAC, and the common schedulers validate against it.
+    The track costs a couple of kilobytes and removes a whole class of "the
+    file just won't upload" that is invisible until it happens.
+
+    ``+faststart`` moves the moov atom to the front of the file in the same
+    pass, so an uploader can start reading the video before it has the whole
+    thing.
+    """
+    import subprocess
+
+    import imageio_ffmpeg
+
+    muxed = path.with_name(f"{path.stem}__muxed.mp4")
+    result = subprocess.run(
+        [
+            imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-loglevel", "error",
+            "-i", str(path),
+            "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+            "-c:v", "copy", "-c:a", "aac", "-b:a", "64k",
+            "-shortest", "-movflags", "+faststart",
+            str(muxed),
+        ],
+        capture_output=True, text=True, check=False,
+    )
+
+    if result.returncode != 0 or not muxed.exists():
+        muxed.unlink(missing_ok=True)
+        raise RuntimeError(
+            "Could not add the silent audio track to "
+            f"{path.name}:\n{result.stderr.strip()[-500:]}"
+        )
+
+    muxed.replace(path)
+
+
 def save_mp4(
     frames: Sequence[np.ndarray],
     path: str | Path,
@@ -216,13 +256,19 @@ def save_mp4(
     hold_last: float = 1.6,
     hold_first: float = 0.6,
     quality: int = 9,
+    audio: bool = True,
 ) -> Path:
-    """Write frames to an H.264 MP4.
+    """Write frames to an H.264 MP4 that a social feed will actually accept.
 
     **Instagram and TikTok do not accept GIF uploads**, and X/Twitter and
     WhatsApp transcode any GIF they are given to video anyway. For anything
     destined for a social feed this is the format to post; keep the GIF for
     GitHub, documentation and messaging apps.
+
+    What comes out is H.264 in ``yuv420p`` with a silent AAC track and even
+    pixel dimensions — the combination the feeds require. Duration is worth a
+    glance too: a feed video under about three seconds is rejected outright,
+    so a short animation wants its frames held rather than its loop trimmed.
 
     Variable frame timing has no direct equivalent in a constant-rate video,
     so ``durations`` is honoured by *repeating* frames — a frame held twice as
@@ -232,19 +278,24 @@ def save_mp4(
     Args:
         frames: RGB arrays, all of identical shape.
         path: Destination ``.mp4``.
-        fps: Frame rate of the output video.
+        fps: Frame rate of the output video. Keep it at 24 or above; feeds
+            specify a floor in the low twenties.
         durations: Per-frame durations in ms, e.g. from :func:`hold_at`.
         hold_last: Seconds held on the final frame, when ``durations`` is None.
         hold_first: Seconds held on the opening frame, likewise.
         quality: imageio quality, 0-10. 9 is visually lossless for flat
             graphics without producing an unnecessarily large file.
+        audio: Mux in a silent AAC track. On by default; see
+            :func:`_add_silent_audio` for why a silent track is not a
+            contradiction in terms.
 
     Returns:
         The path written.
 
     Raises:
         ValueError: If frames are empty or disagree in shape.
-        RuntimeError: If ``imageio-ffmpeg`` is not installed.
+        RuntimeError: If ``imageio-ffmpeg`` is not installed, or the audio
+            track could not be muxed in.
     """
     if not frames:
         raise ValueError("No frames to write.")
@@ -291,6 +342,10 @@ def save_mp4(
         pixelformat="yuv420p",
         macro_block_size=None,  # we already guarantee even dimensions above
     )
+
+    if audio:
+        _add_silent_audio(path)
+
     return path
 
 

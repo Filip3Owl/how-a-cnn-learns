@@ -18,9 +18,21 @@ pass, walked in reverse.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
+
 import numpy as np
 
-__all__ = ["Conv2D", "ReLU", "MaxPool2D", "Flatten", "Dense", "softmax_cross_entropy"]
+__all__ = [
+    "Conv2D",
+    "ReLU",
+    "MaxPool2D",
+    "Flatten",
+    "Dense",
+    "Sequential",
+    "softmax_cross_entropy",
+    "receptive_field",
+    "trace_receptive_field",
+]
 
 
 class Layer:
@@ -320,6 +332,182 @@ class Dense(Layer):
     @property
     def grads(self) -> dict[str, np.ndarray]:
         return {"W": self.dW, "b": self.db}
+
+
+class Sequential(Layer):
+    """An ordered stack of layers that keeps every intermediate result.
+
+    A framework's ``Sequential`` throws the intermediates away as soon as the
+    forward pass is done. Here they are the product: :attr:`activations` holds
+    the input followed by the output of each layer, which is exactly the list
+    of panels a "what does depth do" animation draws.
+
+    Args:
+        *layers: Layers to apply in order.
+    """
+
+    def __init__(self, *layers: Layer) -> None:
+        self.layers = list(layers)
+        #: Input first, then one entry per layer — populated by ``forward``.
+        self.activations: list[np.ndarray] = []
+
+    def __len__(self) -> int:
+        return len(self.layers)
+
+    def __getitem__(self, index):
+        return self.layers[index]
+
+    def __iter__(self):
+        return iter(self.layers)
+
+    def forward(self, x: np.ndarray) -> np.ndarray:
+        self.activations = [x]
+        for layer in self.layers:
+            x = layer.forward(x)
+            self.activations.append(x)
+        return x
+
+    def backward(self, grad_output: np.ndarray) -> np.ndarray:
+        for layer in reversed(self.layers):
+            grad_output = layer.backward(grad_output)
+        return grad_output
+
+    def trace(self) -> list[tuple[str, tuple[int, ...]]]:
+        """``(label, shape)`` for the input and every layer of the last pass.
+
+        The shape ladder a notebook prints beside the pipeline. Raises if no
+        forward pass has run, rather than reporting shapes it cannot know.
+        """
+        if not self.activations:
+            raise RuntimeError("trace() called before forward().")
+
+        rows = [("input", self.activations[0].shape)]
+        for layer, output in zip(self.layers, self.activations[1:], strict=True):
+            rows.append((type(layer).__name__, output.shape))
+        return rows
+
+    @property
+    def params(self) -> dict[str, np.ndarray]:
+        """Every trainable tensor, keyed ``"<index>.<name>"``.
+
+        The arrays are the layers' own, not copies, so an optimiser can update
+        them in place — ``params["0.W"] -= lr * grads["0.W"]`` trains the stack.
+        """
+        return {
+            f"{i}.{name}": value
+            for i, layer in enumerate(self.layers)
+            for name, value in layer.params.items()
+        }
+
+    @property
+    def grads(self) -> dict[str, np.ndarray]:
+        return {
+            f"{i}.{name}": value
+            for i, layer in enumerate(self.layers)
+            for name, value in layer.grads.items()
+        }
+
+
+# --------------------------------------------------------------------------
+# Receptive fields
+#
+# The receptive field of a unit is the patch of the *input* that can still
+# change its value. It is the quantitative form of "depth buys context": a
+# layer-1 unit sees a few pixels, a layer-4 unit sees most of the digit, and
+# nothing but the arithmetic of kernel size, stride and padding decides that.
+# --------------------------------------------------------------------------
+
+def _geometry(layer: Layer) -> tuple[int, int, int] | None:
+    """``(kernel, stride, padding)`` for a layer, or None if it moves no window.
+
+    ReLU and other elementwise layers return None: they read one input per
+    output and so leave the geometry untouched.
+    """
+    if isinstance(layer, Conv2D):
+        return layer.kernel_size, layer.stride, layer.padding
+    if isinstance(layer, MaxPool2D):
+        return layer.size, layer.size, 0
+    if isinstance(layer, (Flatten, Dense)):
+        raise ValueError(
+            f"{type(layer).__name__} destroys the spatial grid; trace the "
+            "receptive field over the convolutional part of the stack only."
+        )
+    return None
+
+
+def _geometries(stack: Iterable[Layer], depth: int | None = None):
+    layers = list(stack)
+    if depth is not None:
+        layers = layers[:depth]
+    return [g for g in map(_geometry, layers) if g is not None]
+
+
+def _span(geometries: Sequence[tuple[int, int, int]], index: int) -> tuple[int, int]:
+    """First and last input index read by output ``index``, walking backwards.
+
+    One layer at a time, output ``i`` reads inputs ``i*s - p`` through
+    ``i*s - p + k - 1``. Composing that from the deepest layer outwards is
+    exact, including the negative indices that mean "this unit is partly
+    looking at padding rather than at the image".
+    """
+    low = high = index
+    for kernel, stride, padding in reversed(geometries):
+        low = low * stride - padding
+        high = high * stride + kernel - 1 - padding
+    return low, high
+
+
+def receptive_field(stack: Iterable[Layer], depth: int | None = None) -> tuple[int, int]:
+    """Size and spacing, in input pixels, of one unit's receptive field.
+
+    Args:
+        stack: The layers, in forward order. A :class:`Sequential` works
+            directly, as does any iterable of layers.
+        depth: Consider only the first ``depth`` layers. ``None`` uses all
+            of them.
+
+    Returns:
+        ``(size, jump)`` — the side length of the input patch a unit sees, and
+        how many input pixels apart neighbouring units' patches sit. ``jump``
+        is the product of the strides, and is what makes a deep unit's view
+        grow faster than its kernels: after two 2x2 pools, a 5x5 kernel reaches
+        across 20 input pixels, not 5.
+    """
+    geometries = _geometries(stack, depth)
+    low0, high0 = _span(geometries, 0)
+    low1, _ = _span(geometries, 1)
+    return high0 - low0 + 1, low1 - low0
+
+
+def trace_receptive_field(
+    stack: Iterable[Layer],
+    row: int,
+    col: int,
+    depth: int | None = None,
+) -> tuple[int, int, int]:
+    """Locate, in input pixels, the patch feeding one output unit.
+
+    Args:
+        stack: The layers, in forward order.
+        row: Row of the unit in the output of layer ``depth``.
+        col: Its column.
+        depth: Consider only the first ``depth`` layers.
+
+    Returns:
+        ``(top, left, size)`` — ready to hand to
+        :func:`cnnviz.panels.highlight_window`. ``top`` or ``left`` can be
+        negative when the unit reads into the zero padding rather than the
+        image; clip before indexing, but draw the box as returned, since the
+        padding is genuinely part of what that unit reads.
+    """
+    geometries = _geometries(stack, depth)
+    top, bottom = _span(geometries, row)
+    left, right = _span(geometries, col)
+
+    size = bottom - top + 1
+    if right - left + 1 != size:  # pragma: no cover - square kernels only
+        raise ValueError("Non-square receptive field; this helper assumes square.")
+    return top, left, size
 
 
 def softmax_cross_entropy(

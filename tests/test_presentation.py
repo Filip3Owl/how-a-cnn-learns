@@ -15,6 +15,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
+from matplotlib.patches import FancyArrowPatch
 
 from cnnviz import panels, style, text
 
@@ -216,6 +217,74 @@ def test_annotations_use_the_active_decimal_separator():
     assert labels == ["0,75"]
 
 
+def test_draw_maps_hides_the_axes_it_does_not_need():
+    """An animation reveals channels one at a time against a fixed grid of axes."""
+    fig, axes = plt.subplots(1, 4)
+    try:
+        images = panels.draw_maps(axes, np.zeros((2, 3, 3)))
+        visible = [ax.get_visible() for ax in axes]
+    finally:
+        plt.close(fig)
+
+    assert len(images) == 2
+    assert visible == [True, True, False, False]
+
+
+def test_draw_maps_rejects_too_few_axes():
+    fig, axes = plt.subplots(1, 2)
+    try:
+        with pytest.raises(ValueError, match="2 axes for 3 maps"):
+            panels.draw_maps(axes, np.zeros((3, 3, 3)))
+    finally:
+        plt.close(fig)
+
+
+def test_draw_maps_shares_one_scale_across_channels():
+    """Per-panel scaling makes a nearly dead channel look as active as a live one."""
+    maps = np.stack([np.full((2, 2), 0.05), np.full((2, 2), 4.0)])
+
+    fig, axes = plt.subplots(1, 2)
+    try:
+        shared = panels.draw_maps(axes, maps, shared_scale=True)
+        per_panel = panels.draw_maps(axes, maps, shared_scale=False)
+    finally:
+        plt.close(fig)
+
+    assert shared[0].norm.vmax == shared[1].norm.vmax
+    assert per_panel[0].norm.vmax < per_panel[1].norm.vmax
+
+
+# ---------------------------------------------------------------------------
+# Flow between panels
+# ---------------------------------------------------------------------------
+
+def _arrow_ends(first_rect, second_rect):
+    """Draw an arrow between two panels at the given figure rectangles."""
+    fig = plt.figure()
+    fig.set_layout_engine("none")
+    try:
+        a = fig.add_axes(first_rect)
+        b = fig.add_axes(second_rect)
+        panels.arrow_between(fig, a, b, "conv 5×5")
+        patch = [p for p in fig.artists if isinstance(p, FancyArrowPatch)][-1]
+        # No public getter for the endpoints; reading the private pair beats
+        # reverse-engineering the direction out of the rendered path.
+        return patch._posA_posB
+    finally:
+        plt.close(fig)
+
+
+def test_arrow_between_reads_its_direction_from_the_layout():
+    """Side by side means left-to-right; stacked means down the page."""
+    (x0, y0), (x1, y1) = _arrow_ends([0.05, 0.4, 0.3, 0.3], [0.65, 0.4, 0.3, 0.3])
+    assert y0 == pytest.approx(y1), "panels side by side get a horizontal arrow"
+    assert x1 > x0
+
+    (x0, y0), (x1, y1) = _arrow_ends([0.35, 0.65, 0.3, 0.3], [0.35, 0.05, 0.3, 0.3])
+    assert x0 == pytest.approx(x1), "stacked panels get a vertical arrow"
+    assert y1 < y0, "and it must point at the lower panel, not away from it"
+
+
 def test_integral_annotations_drop_their_decimals():
     text.set_language("pt-BR")
     fig, ax = plt.subplots()
@@ -290,6 +359,39 @@ def test_mp4_export_produces_a_playable_file(tmp_path):
     meta = iio.get_reader(path).get_meta_data()
     width, height = meta["size"]
     assert width % 2 == 0 and height % 2 == 0, "H.264 needs even dimensions"
+
+
+def _stream_summary(path) -> str:
+    """What ffmpeg says is inside the container."""
+    import subprocess
+
+    import imageio_ffmpeg
+
+    return subprocess.run(
+        [imageio_ffmpeg.get_ffmpeg_exe(), "-hide_banner", "-i", str(path)],
+        capture_output=True, text=True, check=False,
+    ).stderr
+
+
+def test_mp4_carries_a_silent_audio_track_for_the_feeds(tmp_path):
+    """A video with no audio stream at all is refused by part of the posting chain."""
+    from cnnviz import animate
+
+    frames = [np.full((100, 80, 3), value, dtype=np.uint8) for value in (10, 120, 240)]
+    path = animate.save_mp4(frames, tmp_path / "posted.mp4", fps=24)
+
+    summary = _stream_summary(path)
+    assert "Audio: aac" in summary, summary
+    assert "yuv420p" in summary, "feeds want 4:2:0 chroma, not libx264's default for RGB"
+
+
+def test_mp4_audio_track_can_be_turned_off(tmp_path):
+    from cnnviz import animate
+
+    frames = [np.zeros((100, 80, 3), dtype=np.uint8) for _ in range(3)]
+    path = animate.save_mp4(frames, tmp_path / "mute.mp4", fps=24, audio=False)
+
+    assert "Audio:" not in _stream_summary(path)
 
 
 def test_mp4_repeats_held_frames_to_reproduce_gif_timing(tmp_path):
