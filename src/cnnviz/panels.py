@@ -55,13 +55,19 @@ def frame_header(fig, title: str, subtitle: str | None = None) -> None:
 
 
 def caption(fig, label: str, y: float = 0.055, x: float = 0.012,
-            fontsize: float = 10, ha: str = "left") -> None:
+            fontsize: float = 10, ha: str = "left"):
     """Draw an explanatory line along the bottom of the frame.
 
     This is where the animation says what the viewer should be noticing right
     now. It changes between frames; the header does not.
+
+    Returns:
+        The ``Text`` artist, so a caller can measure it. Worth doing on a
+        narrow canvas: a caption is set across the full width rather than into
+        a panel, and a translated string that overruns is invisible until
+        someone opens the one frame that carries it.
     """
-    fig.text(
+    return fig.text(
         x, y, label, ha=ha, va="bottom",
         fontsize=fontsize, color=style.INK_SECONDARY,
     )

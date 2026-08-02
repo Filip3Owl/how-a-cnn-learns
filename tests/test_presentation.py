@@ -17,7 +17,7 @@ import numpy as np
 import pytest
 from matplotlib.patches import FancyArrowPatch
 
-from cnnviz import panels, style, text
+from cnnviz import formats, panels, style, text
 
 
 @pytest.fixture(autouse=True)
@@ -283,6 +283,53 @@ def test_arrow_between_reads_its_direction_from_the_layout():
     (x0, y0), (x1, y1) = _arrow_ends([0.35, 0.65, 0.3, 0.3], [0.35, 0.05, 0.3, 0.3])
     assert x0 == pytest.approx(x1), "stacked panels get a vertical arrow"
     assert y1 < y0, "and it must point at the lower panel, not away from it"
+
+
+def _caption_overruns(label: str, canvas, fontsize: float) -> bool:
+    """Does this caption still fit on the canvas once it is actually set?"""
+    fig = plt.figure(figsize=canvas.figsize, dpi=canvas.dpi)
+    fig.set_layout_engine("none")
+    try:
+        artist = panels.caption(fig, label, x=0.135, fontsize=fontsize)
+        fig.canvas.draw()
+        right = artist.get_window_extent(fig.canvas.get_renderer()).x1
+        return right > fig.bbox.x1
+    finally:
+        plt.close(fig)
+
+
+@pytest.mark.parametrize("language", text.LANGUAGES)
+def test_short_captions_fit_the_portrait_canvas(language):
+    """The feed cut's captions must fit, in every language.
+
+    Translated strings run 20-40% longer than their English originals, and a
+    caption is set across the full width of the canvas rather than into a
+    panel, so it overruns sooner than a title does. It is also the line that
+    changes on every frame, which is how an overrun reaches a published GIF
+    without anyone noticing: it looks fine on the frame you happened to open.
+    """
+    text.set_language(language)
+    canvas = formats.FEED_PORTRAIT
+    size = canvas.pt(9.5)
+
+    too_long = [
+        key for key in text.STRINGS[language]
+        if key.startswith("descent_cap_") and key.endswith("_short")
+        and _caption_overruns(text.t(key), canvas, size)
+    ]
+    assert not too_long, (
+        f"{language}: these captions run off a {canvas.width}px canvas at "
+        f"{size:g}pt — shorten the string rather than the type: {too_long}"
+    )
+
+
+def test_every_short_caption_has_a_full_length_original():
+    """A `*_short` string with no long form is a stale leftover."""
+    for language in text.LANGUAGES:
+        table = text.STRINGS[language]
+        orphans = [key for key in table
+                   if key.endswith("_short") and key[: -len("_short")] not in table]
+        assert not orphans, f"{language}: {orphans}"
 
 
 def test_integral_annotations_drop_their_decimals():

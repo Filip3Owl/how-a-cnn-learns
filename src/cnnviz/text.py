@@ -127,6 +127,76 @@ STRINGS: dict[str, dict[str, str]] = {
         "rf_stage": "stage",
         "rf_pixels": "input pixels seen",
         "rf_unit": "one unit here",
+        # Notebook 03 — the loss landscape
+        "ce_title": "Cross-entropy: the price of being confidently wrong",
+        "ce_x": "probability given to the right answer",
+        "ce_confident_right": "confident and right",
+        "ce_unsure": "a guess",
+        "ce_confident_wrong": "confident and wrong",
+        "ce_chance": "chance, 1 in 10",
+        "features_title": "Two numbers per digit",
+        "features_subtitle": "Each dot is one image, placed by its edge composition.",
+        "feature_x": "share of edge energy at 45°",
+        "feature_y": "share of edge energy at 90°",
+        "digit_class": "digit {d}",
+        "boundary": "decision boundary",
+        "correct_share": "{p}% correct",
+        "slice_title": "The loss along one weight, the other held still",
+        "slice_cut": "the cut above",
+        "w1_axis": "w₁  (45° edges)",
+        "w2_axis": "w₂  (90° edges)",
+        "loss_axis": "loss",
+        "step_axis": "step",
+        "tangent": "tangent",
+        "slope_is_gradient": "slope = {v}",
+        "held_at": "w₂ held at {v}",
+        "landscape_title": "The whole landscape, both weights at once",
+        "minimum_here": "minimum",
+        "steepest_title": "The gradient is the steepest way down — measured",
+        "steepest_probe": "direction, degrees",
+        "steepest_drop": "loss drop per unit step",
+        "steepest_measured": "steepest of {n} probes",
+        "steepest_negative_gradient": "−gradient",
+        "descent_title": "Gradient descent on a real loss surface",
+        "descent_subtitle": (
+            "Every step moves against the gradient, scaled by the learning rate."
+        ),
+        "descent_title_short": "How a network finds its weights",
+        "descent_subtitle_short": "Downhill, one step at a time.",
+        "step_of": "step {k} of {n}",
+        "loss_now": "loss {v}",
+        "descent_cap_start": (
+            "Two weights, set badly on purpose. The surface is the actual loss."
+        ),
+        "descent_cap_gradient": (
+            "The arrow is the negative gradient: the direction of steepest descent."
+        ),
+        "descent_cap_steep": "Steep ground, long steps — most of the drop happens here.",
+        "descent_cap_flat": "Near the bottom the gradient shortens, and so do the steps.",
+        "descent_cap_end": "Settled. No one chose these weights; the slope did.",
+        # Short captions for the portrait cut. A caption is set across the full
+        # canvas width, so it overruns sooner than a title does — and it is the
+        # line that changes every frame, so it overruns unnoticed.
+        "descent_cap_start_short": "Two weights, set badly on purpose.",
+        "descent_cap_gradient_short": "The arrow is −gradient: steepest descent.",
+        "descent_cap_steep_short": "Steep ground, long steps.",
+        "descent_cap_flat_short": "Flatter ground, shorter steps.",
+        "descent_cap_end_short": "Settled. The slope chose these weights.",
+        "lr_title": "One number decides whether it ever arrives",
+        "lr_subtitle": "Same surface, same start, three learning rates.",
+        "lr_label": "rate {v}",
+        "lr_too_small": "too small — still travelling when the budget ran out",
+        "lr_right": "about right — lands and stays",
+        "lr_too_large": "too large — overshoots repeatedly, arrives anyway",
+        "lr_diverges": "past {v} it stops arriving at all",
+        "barrier_title": "The bowl was the easy case",
+        "barrier_subtitle": (
+            "Straight line between two separately trained networks, both ~93% correct."
+        ),
+        "barrier_x": "position along the line from A to B",
+        "barrier_solution": "network {name}",
+        "barrier_peak": "{v}× the worse endpoint",
+        "accuracy_axis": "accuracy",
         # Shared
         "full_digit": "Full digit",
         "crop": "Crop",
@@ -228,6 +298,82 @@ STRINGS: dict[str, dict[str, str]] = {
         "rf_stage": "estágio",
         "rf_pixels": "pixels da entrada vistos",
         "rf_unit": "uma unidade aqui",
+        # Notebook 03 — a paisagem da perda
+        "ce_title": "Entropia cruzada: o preço de errar com confiança",
+        "ce_x": "probabilidade dada à resposta certa",
+        "ce_confident_right": "confiante e certo",
+        "ce_unsure": "um chute",
+        "ce_confident_wrong": "confiante e errado",
+        "ce_chance": "acaso, 1 em 10",
+        "features_title": "Dois números por dígito",
+        "features_subtitle": (
+            "Cada ponto é uma imagem, posicionada pela sua composição de bordas."
+        ),
+        "feature_x": "fração da energia de bordas a 45°",
+        "feature_y": "fração da energia de bordas a 90°",
+        "digit_class": "dígito {d}",
+        "boundary": "fronteira de decisão",
+        "correct_share": "{p}% de acerto",
+        "slice_title": "A perda ao longo de um peso, com o outro parado",
+        "slice_cut": "o corte acima",
+        "w1_axis": "w₁  (bordas a 45°)",
+        "w2_axis": "w₂  (bordas a 90°)",
+        "loss_axis": "perda",
+        "step_axis": "passo",
+        "tangent": "tangente",
+        "slope_is_gradient": "inclinação = {v}",
+        "held_at": "w₂ fixo em {v}",
+        "landscape_title": "A paisagem inteira, os dois pesos de uma vez",
+        "minimum_here": "mínimo",
+        "steepest_title": "O gradiente é a descida mais íngreme — medido",
+        "steepest_probe": "direção, em graus",
+        "steepest_drop": "queda da perda por passo unitário",
+        "steepest_measured": "a mais íngreme de {n} sondagens",
+        "steepest_negative_gradient": "−gradiente",
+        "descent_title": "Descida do gradiente numa superfície de perda real",
+        "descent_subtitle": (
+            "Cada passo anda contra o gradiente, "
+            "escalado pela taxa de aprendizado."
+        ),
+        "descent_title_short": "Como uma rede acha seus pesos",
+        "descent_subtitle_short": "Ladeira abaixo, um passo por vez.",
+        "step_of": "passo {k} de {n}",
+        "loss_now": "perda {v}",
+        "descent_cap_start": (
+            "Dois pesos, mal ajustados de propósito. "
+            "A superfície é a perda de verdade."
+        ),
+        "descent_cap_gradient": (
+            "A seta é o gradiente negativo: a direção de descida mais íngreme."
+        ),
+        "descent_cap_steep": (
+            "Terreno íngreme, passos longos — quase toda a queda acontece aqui."
+        ),
+        "descent_cap_flat": (
+            "Perto do fundo o gradiente encurta, e os passos encurtam junto."
+        ),
+        "descent_cap_end": "Assentou. Ninguém escolheu estes pesos; a ladeira escolheu.",
+        "descent_cap_start_short": "Dois pesos, mal ajustados de propósito.",
+        "descent_cap_gradient_short": "A seta é o −gradiente: a descida mais íngreme.",
+        "descent_cap_steep_short": "Terreno íngreme, passos longos.",
+        "descent_cap_flat_short": "Terreno mais plano, passos mais curtos.",
+        "descent_cap_end_short": "Assentou. A ladeira escolheu estes pesos.",
+        "lr_title": "Um único número decide se ela chega",
+        "lr_subtitle": "Mesma superfície, mesmo início, três taxas de aprendizado.",
+        "lr_label": "taxa {v}",
+        "lr_too_small": "pequena demais — ainda a caminho quando o orçamento acabou",
+        "lr_right": "no ponto — chega e fica",
+        "lr_too_large": "grande demais — passa do ponto várias vezes, mas chega",
+        "lr_diverges": "acima de {v} ela deixa de chegar",
+        "barrier_title": "A tigela era o caso fácil",
+        "barrier_subtitle": (
+            "Linha reta entre duas redes treinadas em separado, "
+            "ambas com ~93% de acerto."
+        ),
+        "barrier_x": "posição na linha de A até B",
+        "barrier_solution": "rede {name}",
+        "barrier_peak": "{v}× o pior extremo",
+        "accuracy_axis": "acurácia",
         "full_digit": "Dígito completo",
         "crop": "Recorte",
         "static_title": "Um detector de bordas verticais aplicado a um 7",

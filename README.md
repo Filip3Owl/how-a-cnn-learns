@@ -62,7 +62,7 @@ Run the test suite with `pytest`.
 |---|----------|--------|
 | 01 | The convolution operation | ✅ complete |
 | 02 | Stacking layers — ReLU, pooling, and hierarchy | ✅ complete |
-| 03 | The loss landscape and gradient descent | planned |
+| 03 | The loss landscape and gradient descent | ✅ complete |
 | 04 | Backpropagation, step by step | planned |
 | 05 | Watching a network train | planned |
 | 06 | What the filters learned | planned |
@@ -85,6 +85,32 @@ shape of nearly every convolutional network ever shipped.*
 | ![A handwritten 7 with four nested coloured squares of 5, 6, 14 and 16 pixels, beside a chart of receptive-field size rising in steps.](results/02_receptive_field.png) | ![Three panels: a signed pre-activation on a diverging ramp, a binary gate mask, and the post-ReLU magnitude on a sequential ramp.](results/02_relu_gate.png) |
 |---|---|
 | **Depth buys context.** Two 5×5 kernels and two poolings put 16 of the digit's 28 pixels behind every output cell — the flat steps are the ReLUs, which widen nothing. | **ReLU is a gate.** It closed on 78.8% of this map: 21.6% genuinely negative — an edge the other way round, gone for good — and the rest flat background. |
+
+### From notebook 03
+
+[`03_the_loss_landscape.ipynb`](notebooks/03_the_loss_landscape.ipynb) — the
+number a network is actually minimising, and the surface it makes over the
+parameters. The classifier is cut down to **two** weights on purpose: with two,
+the contour plot is the entire loss function rather than a slice through one,
+and nothing is hidden behind the page.
+
+![A contour map of a loss surface with a point stepping down it, an arrow at the
+point showing the step about to be taken, and a loss-versus-step curve filling
+in beside it.](results/03_gradient_descent.gif)
+
+*Thirty-two steps of `w ← w − η ∇L` on a real surface — binary cross-entropy
+over 500 MNIST digits, evaluated at every pixel of that contour. The arrow is
+the step actually taken rather than a unit vector, so its shortening as the
+ground flattens is data. Nobody chose the final weights; they are where the
+slope ran out.*
+
+| ![Twenty-four measured points lying on a cosine curve, peaking at the negative-gradient direction.](results/03_steepest_direction.png) | ![A loss curve rising to a tall hump between two low endpoints, with the chord between them shaded far below the curve.](results/03_loss_barrier.png) |
+|---|---|
+| **The gradient is measured, not assumed.** Probe 24 directions, divide the drop in loss by the step length, and the answers land on ‖∇L‖ cos θ — peaking on −∇L to within the probe spacing. Half of all directions make the loss *worse*. | **Real landscapes are not bowls.** The straight line between two separately trained 93% networks climbs to 6.6× their loss and falls to 55.7% accuracy. A convex function cannot do that, and the shaded area is the proof. |
+
+The same notebook pins the stability limit of gradient descent: theory puts it
+at `2/λmax = 19.05` from the Hessian, bisection finds `19.12`, and the two
+agree to 0.36%.
 
 ## Layout
 
@@ -146,11 +172,11 @@ from a dumped one:
 
 ## Theme and language
 
-The code, prose and documentation are in English, and so is the **rendered
-output** of the series as it ships. But the labels baked into a GIF or figure
-come from `cnnviz.text` rather than from the figure code, so theme and language
-are switches rather than rewrites — one line at the top of a notebook
-re-renders every figure in it:
+The code, prose and documentation are in English, and so is every figure that
+illustrates them here. The labels baked into a GIF or figure come from
+`cnnviz.text` rather than from the figure code, so theme and language are
+switches rather than rewrites — one line at the top of a notebook re-renders
+every figure in it:
 
 ```python
 style.use_project_style(theme="dark")   # "light" | "dark"
@@ -171,12 +197,25 @@ The dark categorical palette is a re-stepping of the same eight hues and was
 validated as a set against the dark surface — lightness band, chroma floor,
 colour-vision separation, and ≥3:1 contrast.
 
+**One artefact ships localised**, and it is the one that leaves the repository:
+notebook 03's feed cut renders in pt-BR, because it gets posted rather than
+read here. Everything else stays English.
+
 **Localisation includes numbers.** `text.num()` renders `1,65` in pt-BR and
 `1.65` in English, and uses U+2212 for negatives rather than a hyphen. A
 figure that translates its labels but leaves a full stop in every cell reads
 as half-finished. Note also that translated labels are typically 20–40%
 longer — `draw_matrix(..., title_fontsize=...)` exists because
 "Feature map" becomes "Mapa de características" and overran the canvas.
+
+**Length is not a footnote.** Rendering that feed cut in pt-BR ran three of its
+five captions off the canvas — and measuring properly showed two of the
+*English* ones had been overrunning already. A caption is set across the full
+width rather than into a panel, and it changes every frame, so a clipped line
+reaches a published GIF unnoticed: the frame you happen to open looks fine.
+`*_short` strings fixed it, and `test_short_captions_fit_the_portrait_canvas`
+now measures rendered text against the canvas in every language, so the next
+translation fails a test rather than a post.
 
 ## Posting to social media
 
